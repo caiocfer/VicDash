@@ -1,0 +1,17 @@
+services:
+  vicdash:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vicdash
+    ports:
+      - "5173:5173"
+    # Allow the Vite dev server (running inside the container) to reach services
+    # on the host (e.g. Grafana) via `host.docker.internal`.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Bind-mount the workspace so host and container stay in sync (HMR)
+      - .:/app
+    working_dir: /app
+    command: npm run dev -- --host 0.0.0.0 --port 5173
