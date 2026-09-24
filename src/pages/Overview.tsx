@@ -188,7 +188,7 @@ export default function Overview() {
     [],
   );
   const uptimeQueries = useMemo<GrafanaQueryModel[]>(
-    () => [{ refId: 'D', query: 'time() - node_boot_time_seconds' }],
+    () => [{ refId: 'D', query: 'node_boot_time_seconds' }],
     [],
   );
 
@@ -244,7 +244,11 @@ export default function Overview() {
     };
   })();
 
-  const uptimeSeconds = extractSeries(uptimeQuery.data?.results?.D?.frames?.[0]).lastValue;
+  // Boot epoch is a constant series, so its last value is always correct even
+// when the query step lags the present (2-day ranges sample every ~40 min).
+// Uptime = now - boot, which therefore tracks reality on every refresh.
+  const bootSeconds = extractSeries(uptimeQuery.data?.results?.D?.frames?.[0]).lastValue;
+  const uptimeSeconds = bootSeconds !== null ? Date.now() / 1000 - bootSeconds : null;
 
   const loading =
     unameQuery.isLoading ||
