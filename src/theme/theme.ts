@@ -85,7 +85,7 @@ export function buildVicDashTheme(mode: PaletteMode = 'dark'): Theme {
         },
         styleOverrides: {
           root: {
-            borderRadius: 2,
+            borderRadius: '16px', // M3-style rounded card corners
             border: `1px solid ${CATPPUCCIN.Surface0}`,
           },
         },
@@ -93,7 +93,7 @@ export function buildVicDashTheme(mode: PaletteMode = 'dark'): Theme {
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 2,
+            borderRadius: '16px', // M3-style rounded card corners
             border: `1px solid ${CATPPUCCIN.Surface0}`,
           },
         },

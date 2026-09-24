@@ -456,44 +456,7 @@ export default function Gpu() {
         </CardContent>
       </Card>
 
-      {/* History charts */}
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 3,
-          mt: 3,
-          gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
-        }}
-      >
-        <MetricChart
-          title="Utilization"
-          data={utilSeries}
-          unit="%"
-          color={palette.primary.main}
-        />
-        <MetricChart
-          title="Power Draw"
-          data={powerSeries}
-          unit="W"
-          color={palette.secondary.main}
-          kind="area"
-        />
-        <MetricChart
-          title="Temperature"
-          data={tempSeries}
-          unit="°C"
-          color={palette.warning.main}
-        />
-        <MetricChart
-          title="VRAM Used"
-          data={memSeries}
-          unit="GiB"
-          color={palette.info.main}
-          kind="area"
-        />
-      </Box>
-
-      {/* Per-process breakdown */}
+      {/* GPU process breakdown — directly below VRAM usage */}
       <Card sx={{ mt: 3 }}>
         <CardHeader
           title="GPU Processes"
@@ -548,6 +511,43 @@ export default function Gpu() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* History charts */}
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 3,
+          mt: 3,
+          gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
+        }}
+      >
+        <MetricChart
+          title="Utilization"
+          data={utilSeries}
+          unit="%"
+          color={palette.primary.main}
+        />
+        <MetricChart
+          title="Power Draw"
+          data={powerSeries}
+          unit="W"
+          color={palette.secondary.main}
+          kind="area"
+        />
+        <MetricChart
+          title="Temperature"
+          data={tempSeries}
+          unit="°C"
+          color={palette.warning.main}
+        />
+        <MetricChart
+          title="VRAM Used"
+          data={memSeries}
+          unit="GiB"
+          color={palette.info.main}
+          kind="area"
+        />
+      </Box>
     </Box>
   );
 }
