@@ -148,6 +148,18 @@ function NavBody({
         ))}
       </List>
 
+      {!collapsed && (
+        <>
+          <Divider sx={{ my: 1, borderColor: 'surface.divide' }} />
+          <Box sx={{ px: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Database size={16} />
+            <Typography variant="caption" color="text.secondary">
+              Grafana &times; VictoriaMetrics
+            </Typography>
+          </Box>
+        </>
+      )}
+
       <Box sx={{ px: 1, pb: 1 }}>
         <Divider sx={{ mb: 1, borderColor: 'surface.divide' }} />
         <IconButton
@@ -165,18 +177,6 @@ function NavBody({
           {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </IconButton>
       </Box>
-
-      {!collapsed && (
-        <>
-          <Divider sx={{ my: 1, borderColor: 'surface.divide' }} />
-          <Box sx={{ px: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Database size={16} />
-            <Typography variant="caption" color="text.secondary">
-              Grafana &times; VictoriaMetrics
-            </Typography>
-          </Box>
-        </>
-      )}
     </>
   );
 }
