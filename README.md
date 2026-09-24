@@ -11,8 +11,12 @@ A modern, personal dashboard that monitors system metrics, GPU health, and home 
 
 - **Overview dashboard** with live data:
   - **System Summary** — hostname, OS/kernel, architecture, CPU thread count, uptime
-  - **GPU Snapshot** — model name + total VRAM (from `gpu_memory_total_bytes` labels)
+  - **GPU Snapshot** — model, total VRAM, current memory usage + temperature
   - **Home Assistant Quick Status** — placeholder, integration planned for a later phase
+- **GPU dashboard** (`/gpu`) with live data:
+  - Stat cards: utilization, temperature, fan speed, power draw, VRAM used / total
+  - VRAM usage bar and per-process table (SM %, VRAM, PID(s))
+  - 15-minute history charts: utilization, power, temperature, VRAM (recharts)
 - **Live connection badge** + real error messages instead of silent failures
 - **Auto-refresh every 60 s** with a manual refresh button and "last updated" timestamp
 - **Material Design 3** UI with the Catppuccin Mocha palette (dark)
@@ -25,6 +29,7 @@ A modern, personal dashboard that monitors system metrics, GPU health, and home 
 | Framework    | React 19 + Vite 8 + TypeScript 6                    |
 | UI           | Material UI v6 (M3) + `lucide-react`                |
 | Data         | `@tanstack/react-query` (live polling)              |
+| Charts       | `recharts` (GPU history charts)                     |
 | Backend      | Grafana HTTP API (`POST /api/ds/query`) → VictoriaMetrics |
 
 ## Getting Started
@@ -76,7 +81,8 @@ The container reaches the host's Grafana via `host.docker.internal` (`extra_host
 ## Project Status
 
 - ✅ Phase 1 (Overview) — complete
-- ⏳ Planned: CPU, GPU, and Home Assistant pages
+- ✅ Phase 2 (GPU dashboard) — complete
+- ⏳ Planned: CPU and Home Assistant pages
 
 ## License
 

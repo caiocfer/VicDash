@@ -47,4 +47,4 @@ Build **ONLY** the layout shell and the **`/` (Overview)** route.
 - Success (Green): `#a6e3a1`
 - Warning (Peach): `#fab387`
 - Error (Red): `#f38ba8`
-- Card corner radius: `16px` (`borderRadius: 2` in MUI)
+- Card corner radius: `16px` (set on `MuiPaper`/`MuiCard` in the theme)
