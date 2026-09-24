@@ -5,7 +5,6 @@ import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardHeader from '@mui/material/CardHeader';
-import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -14,6 +13,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { Gauge, RefreshCw } from 'lucide-react';
 
 import { grafanaClient } from '../services/grafanaClient';
+import ConnectionBadge from '../components/ConnectionBadge';
 import type {
   GrafanaDataFrames,
   GrafanaQueryModel,
@@ -115,65 +115,6 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** Live connection-status badge for the header, derived from the query status. */
-function ConnectionBadge({
-  status,
-  refreshing,
-}: {
-  status?: 'pending' | 'success' | 'error';
-  refreshing?: boolean;
-}) {
-  const isConnecting = status === 'pending' || refreshing;
-  const isOk = status === 'success' && !refreshing;
-  const isError = status === 'error';
-  const dotColor = isError
-    ? 'error.main'
-    : isOk
-      ? 'success.main'
-      : 'text.primary';
-  const label = isError
-    ? 'Connection failed'
-    : isOk
-      ? 'Connected'
-      : isConnecting
-        ? refreshing
-          ? 'Refreshing…'
-          : 'Connecting…'
-        : 'Connected';
-
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
-        px: 1.5,
-        py: 0.5,
-        borderRadius: 999,
-        border: '1px solid',
-        borderColor: 'divider',
-      }}
-    >
-      {isConnecting ? (
-        <CircularProgress size={14} />
-      ) : (
-        <Box
-          sx={{
-            width: 9,
-            height: 9,
-            borderRadius: '50%',
-            bgcolor: dotColor,
-            flex: 'none',
-          }}
-        />
-      )}
-      <Typography variant="caption" sx={{ fontWeight: 600 }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-}
-
 export default function Overview() {
   const unameQueries = useMemo<GrafanaQueryModel[]>(
     () => [{ refId: 'A', query: 'node_uname_info' }],
@@ -189,6 +130,22 @@ export default function Overview() {
   );
   const uptimeQueries = useMemo<GrafanaQueryModel[]>(
     () => [{ refId: 'D', query: 'node_boot_time_seconds' }],
+    [],
+  );
+
+  // GPU snapshot live values use a short window so their last sample is current
+  // (long windows step-lag by ~40 min, see docs/GPU-dashboard-triage.md).
+  const gpuLiveRange = (): GrafanaTimeRange => {
+    const to = Date.now();
+    return { from: to - MINUTE * 15 * 1000, to };
+  };
+
+  const gpuMemoryQueries = useMemo<GrafanaQueryModel[]>(
+    () => [{ refId: 'E', query: 'gpu_memory_usage_bytes' }],
+    [],
+  );
+  const gpuTempQueries = useMemo<GrafanaQueryModel[]>(
+    () => [{ refId: 'F', query: 'gpu_temperature_celsius' }],
     [],
   );
 
@@ -223,6 +180,18 @@ export default function Overview() {
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 
+  const gpuMemoryQuery = useQuery({
+    queryKey: ['overview', 'gpuMemory'],
+    queryFn: () => grafanaClient.query(gpuMemoryQueries, gpuLiveRange()),
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
+  const gpuTempQuery = useQuery({
+    queryKey: ['overview', 'gpuTemp'],
+    queryFn: () => grafanaClient.query(gpuTempQueries, gpuLiveRange()),
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
   // Extract structured values from the first returned frame.
   const unameInfo = (() => {
     const s = extractSeries(unameQuery.data?.results?.A?.frames?.[0]);
@@ -250,28 +219,42 @@ export default function Overview() {
   const bootSeconds = extractSeries(uptimeQuery.data?.results?.D?.frames?.[0]).lastValue;
   const uptimeSeconds = bootSeconds !== null ? Date.now() / 1000 - bootSeconds : null;
 
+  const gpuMemoryGb = (() => {
+    const v = extractSeries(gpuMemoryQuery.data?.results?.E?.frames?.[0]).lastValue;
+    return v !== null ? formatBytes(v) : null;
+  })();
+  const gpuTemp = extractSeries(gpuTempQuery.data?.results?.F?.frames?.[0]).lastValue;
+
   const loading =
     unameQuery.isLoading ||
     cpuQuery.isLoading ||
     gpuQuery.isLoading ||
-    uptimeQuery.isLoading;
+    uptimeQuery.isLoading ||
+    gpuMemoryQuery.isLoading ||
+    gpuTempQuery.isLoading;
   const refreshing =
     (unameQuery.isFetching ||
       cpuQuery.isFetching ||
       gpuQuery.isFetching ||
-      uptimeQuery.isFetching) &&
+      uptimeQuery.isFetching ||
+      gpuMemoryQuery.isFetching ||
+      gpuTempQuery.isFetching) &&
     !loading;
   const error =
     unameQuery.error ??
     cpuQuery.error ??
     gpuQuery.error ??
-    uptimeQuery.error;
+    uptimeQuery.error ??
+    gpuMemoryQuery.error ??
+    gpuTempQuery.error;
 
   const lastUpdated = Math.max(
     unameQuery.dataUpdatedAt,
     cpuQuery.dataUpdatedAt,
     gpuQuery.dataUpdatedAt,
     uptimeQuery.dataUpdatedAt,
+    gpuMemoryQuery.dataUpdatedAt,
+    gpuTempQuery.dataUpdatedAt,
   );
 
   const handleRefresh = () => {
@@ -279,6 +262,8 @@ export default function Overview() {
     void cpuQuery.refetch();
     void gpuQuery.refetch();
     void uptimeQuery.refetch();
+    void gpuMemoryQuery.refetch();
+    void gpuTempQuery.refetch();
   };
 
   return (
@@ -389,6 +374,14 @@ export default function Overview() {
             <InfoRow
               label="Total VRAM"
               value={gpuInfo.vramGb !== null ? `${gpuInfo.vramGb} GB` : '—'}
+            />
+            <InfoRow
+              label="GPU Memory Usage"
+              value={gpuMemoryGb !== null ? `${gpuMemoryGb} GB` : '—'}
+            />
+            <InfoRow
+              label="GPU Temperature"
+              value={gpuTemp !== null ? `${gpuTemp.toFixed(0)}°C` : '—'}
             />
           </CardContent>
         </Card>

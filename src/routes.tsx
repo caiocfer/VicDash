@@ -2,7 +2,8 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/Layout/AppLayout';
 import PlaceholderPage from './components/PlaceholderPage';
 import Overview from './pages/Overview';
-import { Cpu, Gauge, Home } from 'lucide-react';
+import Gpu from './pages/Gpu';
+import { Cpu, Home } from 'lucide-react';
 
 /**
  * Application route table for Phase 1.
@@ -27,11 +28,7 @@ export default function AppRoutes() {
         <Route
           path="/gpu"
           element={
-            <PlaceholderPage
-              title="GPU"
-              description="GPU utilization, temperature and VRAM charts will appear here."
-              icon={Gauge}
-            />
+            <Gpu />
           }
         />
         <Route

@@ -34,12 +34,12 @@ gpu_process_sm_utilization_percent           # group by process_name: max %
 gpu_process_memory_bytes                     # group by process_name: sum → GiB
 ```
 
-## Planned → build when ready (`/gpu` page)
+## Built → `/gpu` page (implemented)
 
 1. **Stat row (6 cards):** Utilization %, Temperature °C, Fan % ("Off" when 0), Power W, VRAM used, VRAM total.
 2. **VRAM progress bar:** used vs total + percentage.
-3. **Process table:** process_name | max SM % | VRAM GiB | PID(s) — sorted by utilization.
-4. **History charts** (needs a chart lib, e.g. recharts — currently none): utilization, power, temperature, VRAM over time.
+3. **Process table:** process_name | max SM % | VRAM GiB | PID(s) — sorted by utilization (recharts for history charts).
+4. **History charts** (recharts): utilization, power, temperature, VRAM over time.
 
 ## Notes / gotchas
 
