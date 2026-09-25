@@ -69,12 +69,23 @@ export class HaClient {
    * lights (`light.turn_on` / `light.turn_off`, brightness via
    * `brightness_pct`) and the air-conditioner panel (`climate.set_*`,
    * `switch.turn_on` / `switch.turn_off`). Everything else stays read-only.
+   *
+   * The allowed domains are enforced here (not just in the UI) so a stray
+   * caller can never mutate other entity kinds in HA.
    */
+  private static readonly WRITABLE_DOMAINS = new Set(['light', 'climate', 'switch']);
+
   async callService(
     domain: string,
     service: string,
     data: Record<string, unknown>,
   ): Promise<void> {
+    if (!HaClient.WRITABLE_DOMAINS.has(domain)) {
+      throw new HaApiError(
+        403,
+        `Refusing to call service for domain "${domain}" — only light, climate and switch are writable.`,
+      );
+    }
     const res = await fetch(`${this.options.baseUrl}/api/services/${domain}/${service}`, {
       method: 'POST',
       headers: this.authHeaders('application/json'),

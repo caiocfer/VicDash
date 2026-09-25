@@ -19,7 +19,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import { RefreshCw, ShieldCheck, Server, Lightbulb, Power, Minus, Plus, Activity, Settings } from 'lucide-react';
+import { RefreshCw, Server, Lightbulb, Power, Minus, Plus, Activity, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { haClient, HaApiError } from '../services/haClient';
@@ -488,7 +488,13 @@ function AirConditionerPanel({
   };
 
   const togglePower = () => {
-    const next = isOn ? 'off' : 'cool';
+    const next = isOn
+      ? 'off'
+      : // Power-on mode: prefer the device's own listed modes so this works on
+        // any climate entity, falling back to `cool` only as a last resort.
+        hvacModes.find((m) => m !== 'off' && m !== 'auto') ??
+        hvacModes.find((m) => m !== 'off') ??
+        'cool';
     setOverride({ ...override, hvacMode: next });
     run('set_hvac_mode', { hvac_mode: next }, 'Failed to toggle AC power');
   };
@@ -1165,13 +1171,6 @@ export default function HomeAssistant() {
               {cfg?.location_name ?? '—'}
               {cfg?.version ? ` · v${cfg.version}` : ''}
             </Typography>
-            <Chip
-              icon={<ShieldCheck size={14} />}
-              label="Lights + AC + Pi-hole switches controllable · rest read-only"
-              size="small"
-              color="default"
-              variant="outlined"
-            />
           </Box>
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
