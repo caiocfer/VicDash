@@ -115,7 +115,7 @@ function NavBody({
       </Box>
       <Divider sx={{ mx: collapsed ? 1 : undefined, borderColor: 'surface.divide' }} />
 
-      <List sx={{ flex: 1, py: 1, px: collapsed ? 0.5 : undefined }}>
+      <List sx={{ py: 1, px: collapsed ? 0.5 : undefined }}>
         {NAV_ITEMS.map((item) => (
           <ListItem key={item.to} disablePadding>
             <ListItemButton
@@ -230,12 +230,14 @@ export default function AppLayout() {
         sx={{
           width: collapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH,
           flexShrink: 0,
+          alignSelf: 'flex-start',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           transition: 'width 220ms ease-in-out',
           backgroundColor: 'surface.dark',
           borderRight: '1px solid',
           borderColor: 'surface.divide',
+          height: 'max-content',
         }}
       >
         <NavBody collapsed={collapsed} onToggle={toggleCollapsed} />
