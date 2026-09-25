@@ -230,14 +230,12 @@ export default function AppLayout() {
         sx={{
           width: collapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH,
           flexShrink: 0,
-          alignSelf: 'flex-start',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           transition: 'width 220ms ease-in-out',
           backgroundColor: 'surface.dark',
           borderRight: '1px solid',
           borderColor: 'surface.divide',
-          height: 'max-content',
         }}
       >
         <NavBody collapsed={collapsed} onToggle={toggleCollapsed} />
