@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { keyframes } from '@emotion/react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
@@ -19,8 +19,9 @@ import {
   ACTIVE_STATES,
   UNAVAILABLE_STATES,
   friendlyName,
-  isNextcloud,
+  isShownOnHaTab,
 } from '../services/haHelpers';
+import { loadPreferences } from '../services/haPreferences';
 import ConnectionBadge from '../components/ConnectionBadge';
 import type {
   GrafanaDataFrames,
@@ -201,25 +202,35 @@ export default function Overview() {
   });
 
   // Home Assistant: entities that are currently "on" (including binary
-  // sensors) for the Quick Status card. Nextcloud noise stays hidden.
+  // sensors) for the Quick Status card — limited to what the HA tab itself
+  // displays (hidden domains / Nextcloud / hidden sensors excluded).
   const haStatesQuery = useQuery({
     queryKey: ['overview', 'ha', 'states'],
     queryFn: () => haClient.states(),
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 
+  const [haPrefs, setHaPrefs] = useState(() => loadPreferences());
+
   const activeHaEntities = useMemo(
     () =>
       (haStatesQuery.data ?? [])
         .filter(
           (e) =>
-            !isNextcloud(e) &&
             !UNAVAILABLE_STATES.has(e.state) &&
-            ACTIVE_STATES.has(e.state),
+            ACTIVE_STATES.has(e.state) &&
+            isShownOnHaTab(e, haPrefs),
         )
         .sort((a, b) => friendlyName(a).localeCompare(friendlyName(b))),
-    [haStatesQuery.data],
+    [haStatesQuery.data, haPrefs],
   );
+
+  // Keep preferences in sync if they change while this page is mounted.
+  useEffect(() => {
+    const onStorage = () => setHaPrefs(loadPreferences());
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // Extract structured values from the first returned frame.
   const unameInfo = (() => {

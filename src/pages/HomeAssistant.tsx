@@ -25,6 +25,8 @@ import { Link } from 'react-router-dom';
 import { haClient, HaApiError } from '../services/haClient';
 import {
   ACTIVE_STATES,
+  DOMAIN_ORDER,
+  HIDDEN_DOMAINS,
   UNAVAILABLE_STATES,
   friendlyName,
   isAirConditioner,
@@ -46,40 +48,6 @@ const spin = keyframes`
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 `;
-
-/**
- * Domains rendered as their own card. Everything not listed here is hidden
- * (no "Other" bucket). Sensors and binary sensors render in their own grids
- * below instead of a grouped table.
- */
-const DOMAIN_ORDER = [
-  'light',
-  'switch',
-  'fan',
-  'climate',
-  'media_player',
-  'cover',
-  'lock',
-  'script',
-  'input_boolean',
-  'number',
-  'select',
-  'button',
-  'vacuum',
-  'humidifier',
-  'water_heater',
-] as const;
-
-/** Domains intentionally hidden from the dashboard. */
-const HIDDEN_DOMAINS = new Set([
-  'person',
-  'device_tracker',
-  'notify',
-  'todo',
-  'automation',
-  'scene',
-  'update',
-]);
 
 const DOMAIN_LABELS: Record<string, string> = {
   light: 'Lights',

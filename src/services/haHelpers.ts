@@ -1,4 +1,55 @@
 import type { HaEntity } from '../types/homeAssistant';
+import { isSensorVisible, type HaPreferences } from './haPreferences';
+
+/**
+ * Domains rendered as a grouped table card on the Home Assistant page.
+ * Everything not listed here is hidden (no "Other" bucket). Sensors and
+ * binary sensors render in their own grids instead of a grouped table.
+ */
+export const DOMAIN_ORDER = [
+  'light',
+  'switch',
+  'fan',
+  'climate',
+  'media_player',
+  'cover',
+  'lock',
+  'script',
+  'input_boolean',
+  'number',
+  'select',
+  'button',
+  'vacuum',
+  'humidifier',
+  'water_heater',
+] as const;
+
+/** Domains intentionally hidden from the dashboard (never rendered). */
+export const HIDDEN_DOMAINS = new Set([
+  'person',
+  'device_tracker',
+  'notify',
+  'todo',
+  'automation',
+  'scene',
+  'update',
+]);
+
+/**
+ * True when an entity is actually rendered somewhere on the Home Assistant
+ * page (lights grid, binary sensors grid, sensors grid honoring the settings
+ * toggles, group tables, or the AC / Pi-hole panels). The Overview quick
+ * status uses this so it only reports what the HA tab itself shows.
+ */
+export function isShownOnHaTab(e: HaEntity, prefs: HaPreferences): boolean {
+  const domain = e.entity_id.split('.')[0] ?? '';
+  if (isNextcloud(e) || HIDDEN_DOMAINS.has(domain)) return false;
+  // AC and Pi-hole entities get their own panels regardless of their domain.
+  if (isAirConditioner(e) || isPihole(e)) return true;
+  if (domain === 'light' || domain === 'binary_sensor') return true;
+  if (domain === 'sensor') return isSensorVisible(prefs, e.entity_id);
+  return (DOMAIN_ORDER as readonly string[]).includes(domain);
+}
 
 /** States counted as "active" for the quick status / summary views. */
 export const ACTIVE_STATES = new Set([
