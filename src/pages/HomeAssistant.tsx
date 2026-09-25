@@ -19,9 +19,24 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import { RefreshCw, ShieldCheck, Server, Lightbulb, Power, Minus, Plus } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Server, Lightbulb, Power, Minus, Plus, Activity, Settings } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { haClient, HaApiError } from '../services/haClient';
+import {
+  ACTIVE_STATES,
+  UNAVAILABLE_STATES,
+  friendlyName,
+  isAirConditioner,
+  isNextcloud,
+  isPihole,
+  stateText,
+} from '../services/haHelpers';
+import {
+  isSensorVisible,
+  loadPreferences,
+  type HaPreferences,
+} from '../services/haPreferences';
 import ConnectionBadge from '../components/ConnectionBadge';
 import type { HaEntity } from '../types/homeAssistant';
 
@@ -34,7 +49,8 @@ const spin = keyframes`
 
 /**
  * Domains rendered as their own card. Everything not listed here is hidden
- * (no "Other" bucket).
+ * (no "Other" bucket). Sensors and binary sensors render in their own grids
+ * below instead of a grouped table.
  */
 const DOMAIN_ORDER = [
   'light',
@@ -44,10 +60,6 @@ const DOMAIN_ORDER = [
   'media_player',
   'cover',
   'lock',
-  'binary_sensor',
-  'sensor',
-  'weather',
-  'event',
   'script',
   'input_boolean',
   'number',
@@ -77,10 +89,6 @@ const DOMAIN_LABELS: Record<string, string> = {
   media_player: 'Media Players',
   cover: 'Covers',
   lock: 'Locks',
-  binary_sensor: 'Binary Sensors',
-  sensor: 'Sensors',
-  weather: 'Weather',
-  event: 'Events',
   script: 'Scripts',
   input_boolean: 'Input Booleans',
   number: 'Numbers',
@@ -90,89 +98,6 @@ const DOMAIN_LABELS: Record<string, string> = {
   humidifier: 'Humidifiers',
   water_heater: 'Water Heaters',
 };
-
-/** States counted as "active" in the summary stat. */
-const ACTIVE_STATES = new Set([
-  'on',
-  'open',
-  'playing',
-  'home',
-  'unlocked',
-  'heating',
-  'cooling',
-  'heat',
-  'cool',
-  'auto',
-  'cleaning',
-  'streaming',
-  'charging',
-]);
-
-const UNAVAILABLE_STATES = new Set(['unavailable', 'unknown']);
-
-/** Friendly display name, falling back to the raw entity_id. */
-const friendlyName = (e: HaEntity): string =>
-  typeof e.attributes.friendly_name === 'string' && e.attributes.friendly_name
-    ? e.attributes.friendly_name
-    : e.entity_id;
-
-/**
- * Matches air-conditioner entities by name: "ar-condicionado" / "ar
- * condicionado" / "air condition(er)" / the AC acronym. Checks both the
- * friendly name and the entity_id (e.g. `ar_condicionado_power`).
- */
-const isAirConditioner = (e: HaEntity): boolean =>
-  /ar[\s-]?condicionado|air[\s-]?condition|a\.c\.|(^|[\s_-])ac([\s_-]|$)/i.test(
-    `${e.entity_id} ${friendlyName(e)}`,
-  );
-
-/**
- * Matches Pi-hole entities by name: "pi-hole" / "pi_hole" / "pihole"
- * in either the entity_id or the friendly name.
- */
-const isPihole = (e: HaEntity): boolean =>
-  /pi[\s_-]?hole|pihole/i.test(`${e.entity_id} ${friendlyName(e)}`);
-
-/**
- * Matches Nextcloud entities (dropped from the dashboard for now).
- * Everything from the discovery is named `nextcloud_caiocfer_duckdns_org_*`.
- */
-const isNextcloud = (e: HaEntity): boolean =>
-  /nextcloud/i.test(`${e.entity_id} ${friendlyName(e)}`);
-
-/** Rich state text with units / brightness / temperature where available. */
-function stateText(e: HaEntity): string {
-  const domain = e.entity_id.split('.')[0];
-  if (domain === 'sensor' && typeof e.attributes.unit_of_measurement === 'string') {
-    const unit = e.attributes.unit_of_measurement;
-    // Wh reads poorly at thousands — scale to kWh.
-    if (/^wh$/i.test(unit.trim()) && e.state !== 'unavailable' && Number.isFinite(Number(e.state))) {
-      const kwh = Number(e.state) / 1000;
-      const rounded = Math.round(kwh * 100) / 100;
-      return `${rounded} kWh`;
-    }
-    return `${e.state} ${unit}`;
-  }
-  if (domain === 'climate' && e.attributes.current_temperature != null) {
-    const cur = Number(e.attributes.current_temperature);
-    const tgt = e.attributes.temperature != null ? Number(e.attributes.temperature) : null;
-    return tgt !== null && Number.isFinite(tgt)
-      ? `${e.state} · ${cur.toFixed(1)}°C → ${tgt.toFixed(1)}°C`
-      : `${e.state} · ${cur.toFixed(1)}°C`;
-  }
-  if (domain === 'light' && e.attributes.brightness != null) {
-    const pct = Math.round((Number(e.attributes.brightness) / 255) * 100);
-    return `${e.state} · ${pct}%`;
-  }
-  if (
-    domain === 'media_player' &&
-    typeof e.attributes.media_title === 'string' &&
-    e.attributes.media_title
-  ) {
-    return `${e.state} · ${e.attributes.media_title}`;
-  }
-  return e.state;
-}
 
 /** Dot + text colors for a given state. */
 function stateColor(state: string): string {
@@ -240,6 +165,54 @@ interface ServiceCall {
   domain: string;
   service: string;
   data: Record<string, unknown>;
+}
+
+/**
+ * Read-only M3 tile for a binary sensor or sensor: icon colored by state,
+ * friendly name, and rich state text. Used in the Binary Sensors and Sensors
+ * grids (binary sensors show On/Off; sensors show their measurement).
+ */
+function StatusCard({ entity }: { entity: HaEntity }) {
+  const domain = entity.entity_id.split('.')[0];
+  const on = entity.state === 'on';
+  const unavailable = UNAVAILABLE_STATES.has(entity.state);
+  const active = ACTIVE_STATES.has(entity.state);
+  return (
+    <Card sx={{ opacity: unavailable ? 0.55 : 1 }}>
+      <CardContent sx={{ px: 2, py: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+          <Box
+            sx={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              flex: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: on ? 'primary.main' : 'surface.variant',
+              color: on ? 'primary.contrastText' : active ? 'success.main' : 'text.disabled',
+              boxShadow: on ? '0 0 16px -6px #cba6f7' : 'none',
+            }}
+          >
+            {domain === 'binary_sensor' ? (
+              <Activity size={18} />
+            ) : (
+              <Lightbulb size={18} />
+            )}
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+              {friendlyName(entity)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {unavailable ? 'Unavailable' : stateText(entity)}
+            </Typography>
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
 }
 
 /** One light on its own M3 card: on/off switch + brightness slider. */
@@ -1075,6 +1048,7 @@ export default function HomeAssistant() {
     },
   });
   const [notice, setNotice] = useState<string | null>(null);
+  const [prefs] = useState<HaPreferences>(() => loadPreferences());
 
   const states = statesQuery.data;
   const cfg = configQuery.data;
@@ -1087,14 +1061,44 @@ export default function HomeAssistant() {
     [states],
   );
 
+  // Visible sensors, honoring the settings-page toggles.
+  const binarySensors = useMemo(
+    () =>
+      (states ?? [])
+        .filter(
+          (e) =>
+            e.entity_id.startsWith('binary_sensor.') &&
+            !isPihole(e) &&
+            !isNextcloud(e),
+        )
+        .sort((a, b) => friendlyName(a).localeCompare(friendlyName(b))),
+    [states],
+  );
+
+  const sensors = useMemo(
+    () =>
+      (states ?? [])
+        .filter(
+          (e) =>
+            e.entity_id.startsWith('sensor.') &&
+            !isPihole(e) &&
+            !isNextcloud(e) &&
+            !isAirConditioner(e) &&
+            isSensorVisible(prefs, e.entity_id),
+        )
+        .sort((a, b) => friendlyName(a).localeCompare(friendlyName(b))),
+    [prefs, states],
+  );
+
   const grouped = useMemo(() => {
     const map = new Map<string, HaEntity[]>();
     const acList: HaEntity[] = [];
     const piholeList: HaEntity[] = [];
     for (const e of states ?? []) {
-      const domain = e.entity_id.split('.')[0] ?? 'other';
-      // Lights render as individual cards (see the Lights section below).
-      if (domain === 'light') continue;
+      const domain = e.entity_id.split('.')[0] ?? '';
+      // Lights, sensors and binary sensors render as individual cards (their
+      // own grids above); every other domain lands in a grouped table card.
+      if (domain === 'light' || domain === 'sensor' || domain === 'binary_sensor') continue;
       // Nextcloud + the hidden domains are dropped from the dashboard.
       if (isNextcloud(e) || HIDDEN_DOMAINS.has(domain)) continue;
       // Air conditioners group together regardless of their domain.
@@ -1107,12 +1111,12 @@ export default function HomeAssistant() {
         piholeList.push(e);
         continue;
       }
-      const key = (DOMAIN_ORDER as readonly string[]).includes(domain) ? domain : 'other';
-      const arr = map.get(key);
+      if (!(DOMAIN_ORDER as readonly string[]).includes(domain)) continue;
+      const arr = map.get(domain);
       if (arr) arr.push(e);
-      else map.set(key, [e]);
+      else map.set(domain, [e]);
     }
-    const ordered = [...DOMAIN_ORDER, 'other']
+    const ordered = (DOMAIN_ORDER as readonly string[])
       .filter((d) => (map.get(d)?.length ?? 0) > 0)
       .map((d) => ({
         title: DOMAIN_LABELS[d] ?? d,
@@ -1173,6 +1177,16 @@ export default function HomeAssistant() {
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <ConnectionBadge status={statesQuery.status} refreshing={refreshing} />
+            <Tooltip title="Settings">
+              <IconButton
+                aria-label="Home Assistant settings"
+                component={Link}
+                to="/home-assistant/settings"
+                sx={{ color: 'text.secondary' }}
+              >
+                <Settings size={20} />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Refresh data">
               <IconButton
                 aria-label="Refresh data"
@@ -1240,6 +1254,54 @@ export default function HomeAssistant() {
                 mutation={serviceMutation}
                 onError={(m) => setNotice(m)}
               />
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* Binary Sensors — read-only cards showing On/Off */}
+      {binarySensors.length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" sx={{ mb: 1.5 }}>
+            Binary Sensors
+          </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 1.5,
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                lg: 'repeat(3, 1fr)',
+              },
+            }}
+          >
+            {binarySensors.map((e) => (
+              <StatusCard key={e.entity_id} entity={e} />
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* Sensors — read-only cards, visibility controlled in settings */}
+      {sensors.length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" sx={{ mb: 1.5 }}>
+            Sensors
+          </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 1.5,
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                lg: 'repeat(3, 1fr)',
+              },
+            }}
+          >
+            {sensors.map((e) => (
+              <StatusCard key={e.entity_id} entity={e} />
             ))}
           </Box>
         </Box>

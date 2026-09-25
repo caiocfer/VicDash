@@ -5,14 +5,22 @@ import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardHeader from '@mui/material/CardHeader';
+import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import { Gauge, RefreshCw } from 'lucide-react';
+import { Home, RefreshCw } from 'lucide-react';
 
 import { grafanaClient } from '../services/grafanaClient';
+import { haClient } from '../services/haClient';
+import {
+  ACTIVE_STATES,
+  UNAVAILABLE_STATES,
+  friendlyName,
+  isNextcloud,
+} from '../services/haHelpers';
 import ConnectionBadge from '../components/ConnectionBadge';
 import type {
   GrafanaDataFrames,
@@ -192,6 +200,27 @@ export default function Overview() {
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 
+  // Home Assistant: entities that are currently "on" (including binary
+  // sensors) for the Quick Status card. Nextcloud noise stays hidden.
+  const haStatesQuery = useQuery({
+    queryKey: ['overview', 'ha', 'states'],
+    queryFn: () => haClient.states(),
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
+  const activeHaEntities = useMemo(
+    () =>
+      (haStatesQuery.data ?? [])
+        .filter(
+          (e) =>
+            !isNextcloud(e) &&
+            !UNAVAILABLE_STATES.has(e.state) &&
+            ACTIVE_STATES.has(e.state),
+        )
+        .sort((a, b) => friendlyName(a).localeCompare(friendlyName(b))),
+    [haStatesQuery.data],
+  );
+
   // Extract structured values from the first returned frame.
   const unameInfo = (() => {
     const s = extractSeries(unameQuery.data?.results?.A?.frames?.[0]);
@@ -231,14 +260,16 @@ export default function Overview() {
     gpuQuery.isLoading ||
     uptimeQuery.isLoading ||
     gpuMemoryQuery.isLoading ||
-    gpuTempQuery.isLoading;
+    gpuTempQuery.isLoading ||
+    haStatesQuery.isLoading;
   const refreshing =
     (unameQuery.isFetching ||
       cpuQuery.isFetching ||
       gpuQuery.isFetching ||
       uptimeQuery.isFetching ||
       gpuMemoryQuery.isFetching ||
-      gpuTempQuery.isFetching) &&
+      gpuTempQuery.isFetching ||
+      haStatesQuery.isFetching) &&
     !loading;
   const error =
     unameQuery.error ??
@@ -246,7 +277,8 @@ export default function Overview() {
     gpuQuery.error ??
     uptimeQuery.error ??
     gpuMemoryQuery.error ??
-    gpuTempQuery.error;
+    gpuTempQuery.error ??
+    haStatesQuery.error;
 
   const lastUpdated = Math.max(
     unameQuery.dataUpdatedAt,
@@ -255,6 +287,7 @@ export default function Overview() {
     uptimeQuery.dataUpdatedAt,
     gpuMemoryQuery.dataUpdatedAt,
     gpuTempQuery.dataUpdatedAt,
+    haStatesQuery.dataUpdatedAt,
   );
 
   const handleRefresh = () => {
@@ -264,6 +297,7 @@ export default function Overview() {
     void uptimeQuery.refetch();
     void gpuMemoryQuery.refetch();
     void gpuTempQuery.refetch();
+    void haStatesQuery.refetch();
   };
 
   return (
@@ -386,21 +420,46 @@ export default function Overview() {
           </CardContent>
         </Card>
 
-        {/* Home Assistant Quick Status (placeholder) */}
+        {/* Home Assistant Quick Status — devices currently on (incl. binary sensors) */}
         <Card sx={{ gridColumn: { xs: 'span 1', sm: 'span 2' } }}>
           <CardHeader
             title="Home Assistant Quick Status"
             titleTypographyProps={{ variant: 'h6' }}
+            subheader={
+              haStatesQuery.isLoading
+                ? undefined
+                : `${activeHaEntities.length} ${
+                    activeHaEntities.length === 1 ? 'device' : 'devices'
+                  } on`
+            }
             sx={{ pb: 0 }}
           />
           <Divider />
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1 }}>
-              <Gauge size={20} color="#fab387" />
-              <Typography variant="body1" color="text.secondary">
-                Home Assistant integration is coming in a later phase.
-              </Typography>
-            </Box>
+            {haStatesQuery.isLoading ? (
+              <LinearProgress />
+            ) : activeHaEntities.length === 0 ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1 }}>
+                <Home size={20} color="#fab387" />
+                <Typography variant="body1" color="text.secondary">
+                  Nothing is on right now.
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {activeHaEntities.map((e) => (
+                  <Chip
+                    key={e.entity_id}
+                    label={friendlyName(e)}
+                    size="small"
+                    color={e.state === 'on' ? 'primary' : 'default'}
+                    variant={e.state === 'on' ? 'filled' : 'outlined'}
+                    title={`${e.state} · ${e.entity_id}`}
+                    sx={{ fontWeight: 600 }}
+                  />
+                ))}
+              </Box>
+            )}
           </CardContent>
         </Card>
       </Box>

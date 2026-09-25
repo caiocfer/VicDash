@@ -4,6 +4,7 @@ import PlaceholderPage from './components/PlaceholderPage';
 import Overview from './pages/Overview';
 import Gpu from './pages/Gpu';
 import HomeAssistant from './pages/HomeAssistant';
+import HomeAssistantSettings from './pages/HomeAssistantSettings';
 import { Cpu } from 'lucide-react';
 
 /**
@@ -36,6 +37,12 @@ export default function AppRoutes() {
           path="/home-assistant"
           element={
             <HomeAssistant />
+          }
+        />
+        <Route
+          path="/home-assistant/settings"
+          element={
+            <HomeAssistantSettings />
           }
         />
       </Route>
