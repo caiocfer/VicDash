@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, type UseMutationResult } from '@tanstack/react-query';
 import { keyframes } from '@emotion/react';
 import Box from '@mui/material/Box';
@@ -19,7 +19,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import { RefreshCw, ShieldCheck, Lightbulb, Power, Minus, Plus } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Server, Lightbulb, Power, Minus, Plus } from 'lucide-react';
 
 import { haClient, HaApiError } from '../services/haClient';
 import ConnectionBadge from '../components/ConnectionBadge';
@@ -32,7 +32,10 @@ const spin = keyframes`
   to { transform: rotate(360deg); }
 `;
 
-/** Domains rendered as their own card; anything else lands in "Other". */
+/**
+ * Domains rendered as their own card. Everything not listed here is hidden
+ * (no "Other" bucket).
+ */
 const DOMAIN_ORDER = [
   'light',
   'switch',
@@ -45,22 +48,26 @@ const DOMAIN_ORDER = [
   'sensor',
   'weather',
   'event',
+  'script',
+  'input_boolean',
+  'number',
+  'select',
+  'button',
+  'vacuum',
+  'humidifier',
+  'water_heater',
+] as const;
+
+/** Domains intentionally hidden from the dashboard. */
+const HIDDEN_DOMAINS = new Set([
   'person',
   'device_tracker',
   'notify',
   'todo',
   'automation',
   'scene',
-  'script',
-  'input_boolean',
-  'number',
-  'select',
-  'button',
   'update',
-  'vacuum',
-  'humidifier',
-  'water_heater',
-] as const;
+]);
 
 const DOMAIN_LABELS: Record<string, string> = {
   light: 'Lights',
@@ -74,22 +81,14 @@ const DOMAIN_LABELS: Record<string, string> = {
   sensor: 'Sensors',
   weather: 'Weather',
   event: 'Events',
-  person: 'People',
-  device_tracker: 'Devices',
-  notify: 'Notifications',
-  todo: 'To-do',
-  automation: 'Automations',
-  scene: 'Scenes',
   script: 'Scripts',
   input_boolean: 'Input Booleans',
   number: 'Numbers',
   select: 'Selects',
   button: 'Buttons',
-  update: 'Updates',
   vacuum: 'Vacuum',
   humidifier: 'Humidifiers',
   water_heater: 'Water Heaters',
-  other: 'Other Entities',
 };
 
 /** States counted as "active" in the summary stat. */
@@ -126,6 +125,20 @@ const isAirConditioner = (e: HaEntity): boolean =>
   /ar[\s-]?condicionado|air[\s-]?condition|a\.c\.|(^|[\s_-])ac([\s_-]|$)/i.test(
     `${e.entity_id} ${friendlyName(e)}`,
   );
+
+/**
+ * Matches Pi-hole entities by name: "pi-hole" / "pi_hole" / "pihole"
+ * in either the entity_id or the friendly name.
+ */
+const isPihole = (e: HaEntity): boolean =>
+  /pi[\s_-]?hole|pihole/i.test(`${e.entity_id} ${friendlyName(e)}`);
+
+/**
+ * Matches Nextcloud entities (dropped from the dashboard for now).
+ * Everything from the discovery is named `nextcloud_caiocfer_duckdns_org_*`.
+ */
+const isNextcloud = (e: HaEntity): boolean =>
+  /nextcloud/i.test(`${e.entity_id} ${friendlyName(e)}`);
 
 /** Rich state text with units / brightness / temperature where available. */
 function stateText(e: HaEntity): string {
@@ -166,38 +179,6 @@ function stateColor(state: string): string {
   if (UNAVAILABLE_STATES.has(state)) return 'warning.main';
   if (ACTIVE_STATES.has(state)) return 'success.main';
   return 'text.secondary';
-}
-
-/** Compact stat card for the header row. */
-function StatCard({
-  title,
-  value,
-  accent = 'default',
-}: {
-  title: string;
-  value: ReactNode;
-  accent?: 'default' | 'ok' | 'warn' | 'err';
-}) {
-  const color =
-    accent === 'err'
-      ? 'error.main'
-      : accent === 'warn'
-        ? 'warning.main'
-        : accent === 'ok'
-          ? 'success.main'
-          : 'text.primary';
-  return (
-    <Card>
-      <CardContent>
-        <Typography variant="body2" color="text.secondary">
-          {title}
-        </Typography>
-        <Typography variant="h4" color={color} sx={{ fontWeight: 700, mt: 0.5 }}>
-          {value}
-        </Typography>
-      </CardContent>
-    </Card>
-  );
 }
 
 /** One domain group rendered as a card with an entity state table. */
@@ -853,6 +834,226 @@ function AirConditionerPanel({
   );
 }
 
+/**
+ * Dedicated panel for Pi-hole: status header, metric pills and clickable
+ * switch tiles (writable via switch.* — same pattern as the AC panel).
+ */
+function PiholePanel({
+  entities,
+  mutation,
+  onError,
+}: {
+  entities: HaEntity[];
+  mutation: UseMutationResult<void, Error, ServiceCall, unknown>;
+  onError: (message: string) => void;
+}) {
+  const statusEntity =
+    entities.find((e) => e.entity_id.includes('status')) ??
+    entities.find((e) => e.entity_id.startsWith('binary_sensor.'));
+  const switches = entities.filter((e) => e.entity_id.startsWith('switch.'));
+  const metricEntities = entities.filter(
+    (e) =>
+      e.entity_id.startsWith('sensor.') ||
+      e.entity_id.startsWith('binary_sensor.'),
+  );
+  // Buttons and update checks are informational only — shown as plain pills.
+  const infoEntities = entities.filter(
+    (e) =>
+      !e.entity_id.startsWith('switch.') &&
+      !e.entity_id.startsWith('sensor.') &&
+      !e.entity_id.startsWith('binary_sensor.'),
+  );
+
+  const [switchOn, setSwitchOn] = useState<Record<string, boolean>>({});
+  const switchKey = switches.map((s) => `${s.entity_id}:${s.state}`).join('|');
+  useEffect(() => {
+    setSwitchOn({});
+  }, [switchKey]);
+
+  const unavailable = entities.every((e) => e.state === 'unavailable');
+  const up =
+    statusEntity != null &&
+    (statusEntity.state === 'on' ||
+      statusEntity.state === 'enabled' ||
+      statusEntity.state === 'up');
+
+  const toggleSwitch = (e: HaEntity) => {
+    const next = (switchOn[e.entity_id] ?? e.state === 'on') ? false : true;
+    setSwitchOn((prev) => ({ ...prev, [e.entity_id]: next }));
+    mutation.mutate(
+      { domain: 'switch', service: next ? 'turn_on' : 'turn_off', data: { entity_id: e.entity_id } },
+      {
+        onError: (err) => {
+          setSwitchOn((prev) => ({ ...prev, [e.entity_id]: e.state === 'on' }));
+          onError(`Failed to toggle ${friendlyName(e)}: ${err.message}`);
+        },
+      },
+    );
+  };
+
+  const shortName = (e: HaEntity): string =>
+    friendlyName(e)
+      .replace(/^pi[\s_-]?hole\s*/i, '')
+      .trim() || friendlyName(e);
+
+  return (
+    <Card>
+      <CardContent sx={{ p: 3, opacity: unavailable ? 0.55 : 1 }}>
+        {/* Header: Pi-hole icon + status */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: up ? 'primary.main' : 'surface.variant',
+              color: up ? 'primary.contrastText' : 'text.disabled',
+              boxShadow: up ? '0 0 16px -6px #cba6f7' : 'none',
+            }}
+          >
+            <Server size={22} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
+              Pi-hole
+            </Typography>
+            <Typography
+              variant="body2"
+              color={up ? 'success.main' : 'text.secondary'}
+              noWrap
+            >
+              {statusEntity
+                ? up
+                  ? friendlyName(statusEntity).replace(/^pi[\s_-]?hole\s*/i, '') + ' enabled'
+                  : `${friendlyName(statusEntity).replace(/^pi[\s_-]?hole\s*/i, '')}: ${statusEntity.state}`
+                : 'Pi-hole'}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Metric pills */}
+        {metricEntities.length > 0 && (
+          <Box sx={{ mt: 2.5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {metricEntities
+              .filter((e) => e !== statusEntity)
+              .map((s) => (
+                <Box
+                  key={s.entity_id}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    bgcolor: 'surface.variant',
+                    borderRadius: 2,
+                    px: 1.5,
+                    py: 1,
+                    minWidth: 110,
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    noWrap
+                    sx={{ maxWidth: 140 }}
+                  >
+                    {shortName(s)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {stateText(s)}
+                  </Typography>
+                </Box>
+              ))}
+          </Box>
+        )}
+
+        {/* Clickable switch tiles */}
+        {switches.length > 0 && (
+          <Box
+            sx={{
+              mt: 2.5,
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              gap: 1.5,
+              columnGap: 12,
+            }}
+          >
+            {switches.map((s) => {
+              const isOn = switchOn[s.entity_id] ?? s.state === 'on';
+              return (
+                <Box
+                  key={s.entity_id}
+                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, py: 0.5 }}
+                >
+                  <IconButton
+                    aria-label={`Toggle ${friendlyName(s)}`}
+                    onClick={() => toggleSwitch(s)}
+                    disabled={mutation.isPending || s.state === 'unavailable'}
+                    sx={{
+                      width: 38,
+                      height: 38,
+                      p: 0,
+                      bgcolor: isOn ? 'primary.main' : 'surface.variant',
+                      color: isOn ? 'primary.contrastText' : 'text.disabled',
+                      boxShadow: isOn ? '0 0 16px -6px #cba6f7' : 'none',
+                      transition:
+                        'background-color 200ms ease, color 200ms ease, box-shadow 200ms ease',
+                      '&:hover': {
+                        bgcolor: isOn ? 'primary.dark' : 'surface.default',
+                      },
+                    }}
+                  >
+                    <Power size={18} />
+                  </IconButton>
+                  <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                    {shortName(s)}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+
+        {/* Informational pills: buttons, updates */}
+        {infoEntities.length > 0 && (
+          <Box sx={{ mt: 2.5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {infoEntities.map((e) => (
+              <Box
+                key={e.entity_id}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  bgcolor: 'surface.variant',
+                  borderRadius: 2,
+                  px: 1.5,
+                  py: 1,
+                  minWidth: 110,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  noWrap
+                  sx={{ maxWidth: 140 }}
+                >
+                  {shortName(e)}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {stateText(e)}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function HomeAssistant() {
   const statesQuery = useQuery({
     queryKey: ['ha', 'states'],
@@ -889,13 +1090,21 @@ export default function HomeAssistant() {
   const grouped = useMemo(() => {
     const map = new Map<string, HaEntity[]>();
     const acList: HaEntity[] = [];
+    const piholeList: HaEntity[] = [];
     for (const e of states ?? []) {
       const domain = e.entity_id.split('.')[0] ?? 'other';
       // Lights render as individual cards (see the Lights section below).
       if (domain === 'light') continue;
+      // Nextcloud + the hidden domains are dropped from the dashboard.
+      if (isNextcloud(e) || HIDDEN_DOMAINS.has(domain)) continue;
       // Air conditioners group together regardless of their domain.
       if (isAirConditioner(e)) {
         acList.push(e);
+        continue;
+      }
+      // Pi-hole gets its own panel, also regardless of domain.
+      if (isPihole(e)) {
+        piholeList.push(e);
         continue;
       }
       const key = (DOMAIN_ORDER as readonly string[]).includes(domain) ? domain : 'other';
@@ -914,13 +1123,14 @@ export default function HomeAssistant() {
       ...(acList.length > 0
         ? [{ title: 'Air Conditioners', entities: acList, wide: true as const }]
         : []),
+      ...(piholeList.length > 0
+        ? [{ title: 'Pi-hole', entities: piholeList, wide: true as const }]
+        : []),
       ...ordered,
     ];
   }, [states]);
 
   const total = states?.length ?? 0;
-  const active = (states ?? []).filter((e) => ACTIVE_STATES.has(e.state)).length;
-  const unavailable = (states ?? []).filter((e) => UNAVAILABLE_STATES.has(e.state)).length;
 
   const loading = statesQuery.isLoading;
   const refreshing = statesQuery.isFetching && !loading;
@@ -953,7 +1163,7 @@ export default function HomeAssistant() {
             </Typography>
             <Chip
               icon={<ShieldCheck size={14} />}
-              label="Lights + AC controllable · rest read-only"
+              label="Lights + AC + Pi-hole switches controllable · rest read-only"
               size="small"
               color="default"
               variant="outlined"
@@ -1006,26 +1216,6 @@ export default function HomeAssistant() {
         </Card>
       )}
 
-      {/* Summary stats */}
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 3,
-          gridTemplateColumns: {
-            xs: '1fr',
-            sm: 'repeat(3, 1fr)',
-          },
-        }}
-      >
-        <StatCard title="Total Entities" value={total} />
-        <StatCard title="Active" value={active} accent={active > 0 ? 'ok' : 'default'} />
-        <StatCard
-          title="Unavailable"
-          value={unavailable}
-          accent={unavailable > 0 ? 'err' : 'ok'}
-        />
-      </Box>
-
       {/* Lights — grid of compact M3 control cards */}
       {lights.length > 0 && (
         <Box sx={{ mt: 3 }}>
@@ -1065,9 +1255,17 @@ export default function HomeAssistant() {
         }}
       >
         {grouped.map((g) =>
-          g.wide ? (
+          g.wide && g.title === 'Air Conditioners' ? (
             <Box key={g.title} sx={{ gridColumn: '1 / -1' }}>
               <AirConditionerPanel
+                entities={g.entities}
+                mutation={serviceMutation}
+                onError={(m) => setNotice(m)}
+              />
+            </Box>
+          ) : g.wide && g.title === 'Pi-hole' ? (
+            <Box key={g.title} sx={{ gridColumn: '1 / -1' }}>
+              <PiholePanel
                 entities={g.entities}
                 mutation={serviceMutation}
                 onError={(m) => setNotice(m)}
