@@ -12,11 +12,18 @@ A modern, personal dashboard that monitors system metrics, GPU health, and home 
 - **Overview dashboard** with live data:
   - **System Summary** — hostname, OS/kernel, architecture, CPU thread count, uptime
   - **GPU Snapshot** — model, total VRAM, current memory usage + temperature
-  - **Home Assistant Quick Status** — placeholder, integration planned for a later phase
 - **GPU dashboard** (`/gpu`) with live data:
   - Stat cards: utilization, temperature, fan speed, power draw, VRAM used / total
   - VRAM usage bar and per-process table (SM %, VRAM, PID(s))
   - 15-minute history charts: utilization, power, temperature, VRAM (recharts)
+- **Home Assistant dashboard** (`/home-assistant`) — entity states grouped by
+  domain (sensors, climate, media players, …) with live connection status and
+  availability summary. **Lights** get their own Material 3 card each with an
+  on/off switch and a brightness level bar; **air conditioners** (matched by
+  name, e.g. `ar-condicionado`, `AC`) are grouped into an M3 control panel with
+  power, target temperature, mode/fan/swing chips and sensor pills
+  (`VITE_HA_TOKEN` needs read access plus `light.*`, `climate.*` and `switch.*`
+  service rights). Everything else is read-only.
 - **Live connection badge** + real error messages instead of silent failures
 - **Auto-refresh every 60 s** with a manual refresh button and "last updated" timestamp
 - **Material Design 3** UI with the Catppuccin Mocha palette (dark)
@@ -82,7 +89,8 @@ The container reaches the host's Grafana via `host.docker.internal` (`extra_host
 
 - ✅ Phase 1 (Overview) — complete
 - ✅ Phase 2 (GPU dashboard) — complete
-- ⏳ Planned: CPU and Home Assistant pages
+- ✅ Phase 3 (Home Assistant dashboard, read-only) — complete
+- ⏳ Planned: CPU page
 
 ## License
 

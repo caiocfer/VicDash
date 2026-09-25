@@ -3,12 +3,13 @@ import AppLayout from './components/Layout/AppLayout';
 import PlaceholderPage from './components/PlaceholderPage';
 import Overview from './pages/Overview';
 import Gpu from './pages/Gpu';
-import { Cpu, Home } from 'lucide-react';
+import HomeAssistant from './pages/HomeAssistant';
+import { Cpu } from 'lucide-react';
 
 /**
- * Application route table for Phase 1.
- * - `/` is the active Overview page.
- * - `/cpu`, `/gpu`, `/home-assistant` are placeholders for later phases.
+ * Application route table.
+ * - `/` Overview, `/gpu` GPU, `/home-assistant` Home Assistant: live pages.
+ * - `/cpu` is a placeholder for a later phase.
  */
 export default function AppRoutes() {
   return (
@@ -34,11 +35,7 @@ export default function AppRoutes() {
         <Route
           path="/home-assistant"
           element={
-            <PlaceholderPage
-              title="Home Assistant"
-              description="Home automation state and controls will appear here."
-              icon={Home}
-            />
+            <HomeAssistant />
           }
         />
       </Route>
